@@ -58,17 +58,17 @@ $con->reg_cb(
     part => sub {
 		my ($con, $nick, $channel, $is_myself, $msg) = @_;
 
-		print " * $nick has left $channel\n"."$msg\n";
+		print " * $nick has left $channel\n".( $msg ? "$msg\n" : '');
 	},
     kick => sub {
         my ($con, $kicked, $channel, $is_myself, $msg, $kicker) = @_;
 
-        print " * $kicked has kicked from $channel by $kicker\n"."$msg";
+        print " * $kicked has kicked from $channel by $kicker\n".($msg ? "$msg\n" : '');
     },
     quit => sub {
 		my ($con, $nick, $msg) = @_;
 
-		print " * $nick has quit\n"."$msg\n";
+		print " * $nick has quit\n".($msg ? "$msg\n" : '');
 	},
     nick_change => sub {
 		my ($con, $old, $new, $is_myself) = @_;
@@ -76,19 +76,32 @@ $con->reg_cb(
 		print " * $old has changed to $new\n";
 	},
     publicmsg => sub {
-        my ($con, $nick, $ircmsg) = @_;
+        my ($con, $chanel, $ircmsg) = @_;
+		my $msg = $ircmsg->{params}[1] ? $ircmsg->{params}[1] : '';
+
+		my $_ = $ircmsg->{prefix}; /^(.*)!(.*)\@(.*)$/;
+		my $nick = $1;
+
+        print "$chanel -> $nick: $msg\n";
     },
     privatemsg => sub {
 		my ($con, $nick, $ircmsg) = @_;
+		my $msg = $ircmsg->{params}[1] ? $ircmsg->{params}[1] : '';
+
+		my $_ = $ircmsg->{prefix};  /^(.*)!(.*)\@(.*)$/;
+		my $from = $1;
+
+		print "$from: $msg\n";
 	},
 	ctcp => sub {
 		my ($con, $sender, $target, $tag, $msg, $type) = @_;
 
-		print " * $sender send CTCP $tag to $target by $type\n"."$msg\n";
+		print " * $sender send CTCP $tag to $target by $type\n".($msg ? "$msg\n" : '');
 	},
 	error => sub {
 		my ($con, $code, $message, $ircmsg) = @_;
-		# rfc_code_to_name($code)
+
+		print "\n!! ERROR #$code: ".rfc_code_to_name($code)." $message\n\n"
 	}
 );
 
