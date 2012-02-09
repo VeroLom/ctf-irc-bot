@@ -10,70 +10,86 @@ use Getopt::Long;
 use LWP::UserAgent;
 
 my %opt = (
-    channel => '#spbctf',
-    nick    => "logger1",
+    server  => 'irc.run.net',
     port    => 6667,
-    server  => 'irc.freenode.net',
-    verbose => undef,
-    dbname  => 'irc_log.db',
+    nick    => "Triplegondastkneht",
+    channel => '#0xff',
 );
 
-GetOptions(\%opt,'channel','nick', 'port', 'server', 'verbose|v', 'dbname');
-my $message = shift || "I started logging your asses at @{[ scalar localtime ]}";
-
-init_db();
-
-if ($opt{verbose}) {
-    warn "message is: '$message'";
-    warn Data::Dumper->Dump([\%opt], [qw(*opt)]);
-}
+GetOptions(\%opt, 'server', 'port', 'nick', 'channel');
 
 my $c = AnyEvent->condvar;
 my $con = AnyEvent::IRC::Client->new;
 
 $con->reg_cb(
+	connect => sub {
+		my ($con, $err) = @_;
+
+		if(defined($err)) {
+			warn "!! Connection error: $err\n";
+			return;
+		} else {
+			print " * Connected\n";
+		}
+	},
+	registered => sub {
+		my ($con) = @_;
+
+		print " * Registered\n";
+	},
+	channel_add => undef,
+	channel_remove => undef,
+	channel_change => undef,
+	channel_nickmode_update => undef,
+	channel_topic => sub {
+		my ($con, $channel, $topic, $who) = @_;
+
+		print " * Topic of $channel is $topic".($who ? " set by $who " : '')."\n";
+	},
     join => sub {
-        my ($con, $nick, $channel, $is_myself) = @_; 
+        my ($con, $nick, $channel, $is_myself) = @_;
 
         if ($is_myself && $channel eq $opt{channel}) {
-            $con->send_chan($channel, PRIVMSG => $channel, $message);
-        }
+			print " * Joined to $channel\n";
+        } else {
+			print " * $nick joined to $channel\n";
+		}
     },
-    publicmsg => sub {
-        my ($con, $nick, $ircmsg) = @_;
+    part => sub {
+		my ($con, $nick, $channel, $is_myself, $msg) = @_;
 
-        my $msg = $ircmsg->{'params'}[1];
-        if ($msg =~ /^showlog\s*(\d*)$/) {
-            my $db = connect_db();
-            my $count = $1 || 10;
-            my $sql = 'select id, nick, message from messages order by id desc limit '.$count;
-            my $sth = $db->prepare($sql) or die $db->errstr;
-            $sth->execute or die $sth->errstr;
-            my $msgs = $sth->fetchall_hashref('id');
-            my $log;
-            $log .= $msgs->{$_}{'nick'}.": ".$msgs->{$_}{'message'}."\n"
-                for sort {$a <=> $b} keys $msgs;
-            my $ua = LWP::UserAgent->new;
-            my $res = $ua->post('http://sprunge.us', ['sprunge' => $log])->content;
-            $res =~ s/\n/?irc/;
-            $con->send_chan($opt{'channel'}, PRIVMSG => ($opt{'channel'}, "Last $count messages:$res"));
-        }
-        else {
-            my $db = connect_db();
-            my $sql = 'insert into messages (nick, message) values (?, ?)';
-            my $sth = $db->prepare($sql) or die $db->errstr;
-            my ($nick) = $ircmsg->{'prefix'} =~ /^(.*)!/;
-            $sth->execute($nick, $msg);
-        }
-    },
+		print " * $nick has left $channel\n"."$msg\n";
+	},
     kick => sub {
         my ($con, $kicked, $channel, $is_myself, $msg, $kicker) = @_;
-        if ($kicked eq $opt{nick}) {
-            $con->send_srv(JOIN => $channel);
-            $con->send_chan($channel, PRIVMSG => ($channel, "Go kick yourself, $kicker!!"));
-            warn $msg if $is_myself;
-        }
-    }
+
+        print " * $kicked has kicked from $channel by $kicker\n"."$msg";
+    },
+    quit => sub {
+		my ($con, $nick, $msg) = @_;
+
+		print " * $nick has quit\n"."$msg\n";
+	},
+    nick_change => sub {
+		my ($con, $old, $new, $is_myself) = @_;
+
+		print " * $old has changed to $new\n";
+	},
+    publicmsg => sub {
+        my ($con, $nick, $ircmsg) = @_;
+    },
+    privatemsg => sub {
+		my ($con, $nick, $ircmsg) = @_;
+	},
+	ctcp => sub {
+		my ($con, $sender, $target, $tag, $msg, $type) = @_;
+
+		print " * $sender send CTCP $tag to $target by $type\n"."$msg\n";
+	},
+	error => sub {
+		my ($con, $code, $message, $ircmsg) = @_;
+		# rfc_code_to_name($code)
+	}
 );
 
 $con->connect($opt{server}, $opt{port}, { nick => $opt{nick} });
@@ -81,23 +97,3 @@ $con->send_srv(JOIN => $opt{channel});
 
 $c->wait;
 $con->disconnect;
-
-sub connect_db {
-    my $dbfile = $opt{'dbname'};
-    my $dbh    = DBI->connect("dbi:SQLite:dbname=$dbfile") or
-        die $DBI::errstr;
-    return $dbh;
-}
-
-sub init_db {
-    my $db     = connect_db();
-    my $schema = do {local $/ = <DATA>};
-    $db->do($schema) or die $db->errstr;
-}
-
-__DATA__
-create table if not exists messages (
-  id integer primary key autoincrement,
-  nick string not null,
-  message string not null
-);
