@@ -37,10 +37,10 @@ $con->reg_cb(
 
 		print " * Registered\n";
 	},
-	channel_add => undef,
-	channel_remove => undef,
-	channel_change => undef,
-	channel_nickmode_update => undef,
+	#channel_add => undef,
+	#channel_remove => undef,
+	#channel_change => undef,
+	#channel_nickmode_update => undef,
 	channel_topic => sub {
 		my ($con, $channel, $topic, $who) = @_;
 
